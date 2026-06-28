@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Global Live Earthquakes · 3D Globe</title>
+
+  <!-- Load the ArcGIS Maps SDK stylesheet (dark theme) and core library -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.34/esri/themes/dark/main.css">
+  <script src="https://js.arcgis.com/4.34/"></script>
+
+  <style>
+    html, body, #viewDiv {
+      padding: 0;
+      margin: 0;
+      height: 100%;
+      width: 100%;
+      font-family: "Segoe UI", Helvetica, Arial, sans-serif;
+    }
+
+    /* Shared frosted-glass panel look */
+    .glass {
+      position: absolute;
+      z-index: 10;
+      background: rgba(18, 24, 38, 0.82);
+      backdrop-filter: blur(8px);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 12px;
+      color: #e8edf4;
+    }
+
+    /* Top-left info panel */
+    #panel { top: 16px; left: 16px; width: 250px; padding: 16px 18px; }
+    #panel h1 { font-size: 17px; font-weight: 600; margin: 0 0 2px; }
+    #panel .sub { font-size: 12px; color: #8ea3bd; margin-bottom: 14px; }
+    #count { font-size: 30px; font-weight: 700; line-height: 1; color: #ff8a3c; margin-bottom: 2px; }
+    #count-label { font-size: 12px; color: #8ea3bd; margin-bottom: 14px; }
+    .legend-title { font-size: 12px; color: #8ea3bd; margin-bottom: 6px; }
+    .legend-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; font-size: 12px; }
+    .dot { border-radius: 50%; display: inline-block; flex-shrink: 0; }
+    #updated { margin-top: 14px; font-size: 11px; color: #708099; }
+    #spinBtn {
+      margin-top: 12px; width: 100%; padding: 8px; font-size: 13px; cursor: pointer;
+      background: rgba(255, 138, 60, 0.15); color: #ff8a3c;
+      border: 1px solid rgba(255, 138, 60, 0.4); border-radius: 8px;
+    }
+    #spinBtn:hover { background: rgba(255, 138, 60, 0.25); }
+
+    /* Right-side news column */
+    #news {
+      top: 16px; right: 16px; bottom: 16px; width: 300px;
+      padding: 14px 8px 14px 16px; display: flex; flex-direction: column;
+    }
+    #news h2 { font-size: 15px; font-weight: 600; margin: 0 0 2px; }
+    #news .news-sub { font-size: 11px; color: #8ea3bd; margin-bottom: 6px; }
+    #news-status { font-size: 10px; color: #708099; margin-bottom: 10px; }
+    #news-list { overflow-y: auto; padding-right: 8px; flex: 1; }
+
+    .news-card {
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 10px; padding: 12px; margin-bottom: 10px; cursor: pointer;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .news-card:hover {
+      background: rgba(255, 138, 60, 0.12);
+      border-color: rgba(255, 138, 60, 0.4);
+    }
+    .news-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+    .news-source {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.5px;
+      background: #ff8a3c; color: #1b1205; padding: 2px 6px; border-radius: 4px;
+    }
+    .news-date { font-size: 10px; color: #8ea3bd; }
+    .news-title { font-size: 13px; font-weight: 600; line-height: 1.35; margin-bottom: 6px; }
+    .news-summary { font-size: 12px; line-height: 1.45; color: #b9c6d8; }
+    .news-actions { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+    .news-read { font-size: 12px; color: #ff8a3c; }
+    .news-pin {
+      font-size: 11px; cursor: pointer; color: #8ea3bd;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 6px; padding: 3px 8px;
+    }
+    .news-pin:hover { color: #fff; border-color: #ff8a3c; }
+  </style>
+</head>
+
+<body>
+  <!-- Info panel (left) -->
+  <div id="panel" class="glass">
+    <h1>🌐 Global Live Earthquakes</h1>
+    <div class="sub">Source: USGS · Past 7 days</div>
+
+    <div id="count">…</div>
+    <div id="count-label">earthquakes recorded</div>
+
+    <div class="legend-title">Magnitude (bigger &amp; redder = stronger)</div>
+    <div class="legend-row"><span class="dot" style="width:8px;height:8px;background:#ffe08a"></span> M 1–3 minor</div>
+    <div class="legend-row"><span class="dot" style="width:12px;height:12px;background:#ff9f40"></span> M 3–5 moderate</div>
+    <div class="legend-row"><span class="dot" style="width:18px;height:18px;background:#ff5a2c"></span> M 5–7 strong</div>
+    <div class="legend-row"><span class="dot" style="width:24px;height:24px;background:#c81d11"></span> M 7+ major</div>
+
+    <div id="updated">Loading…</div>
+    <button id="spinBtn">⏸ Pause rotation</button>
+  </div>
+
+  <!-- News column (right) -->
+  <div id="news" class="glass">
+    <h2>📰 Earthquake News</h2>
+    <div class="news-sub">Click a card to read · 📍 to fly the globe there</div>
+    <div id="news-status"></div>
+    <div id="news-list"></div>
+  </div>
+
+  <!-- The 3D globe is drawn inside this container -->
+  <div id="viewDiv"></div>
+
+  <script>
+    // =====================================================================
+    // LIVE NEWS SETTINGS
+    // ---------------------------------------------------------------------
+    // To get REAL-TIME news, sign up for a free token at https://gnews.io
+    // (free tier: 100 requests/day, works in the browser), then paste it
+    // between the quotes below. Leave it empty to show the curated list.
+    // =====================================================================
+    const GNEWS_TOKEN = "b6aad601fe53f9a73fb83af54f1f35fc";              
+    const NEWS_QUERY  = "earthquake";    // what to search news for
+
+    require([
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/layers/GeoJSONLayer"
+    ], function (Map, SceneView, GeoJSONLayer) {
+
+      // ---- Globe spin state declared FIRST so the news buttons can use it ----
+      let spinning = true;
+      const spinBtn = document.getElementById("spinBtn");
+
+      // 1) USGS live earthquake feed (past week, worldwide, free, no API key)
+      const usgsUrl =
+        "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/all_week.geojson";
+
+      // 2) How each point looks: size and color both scale with magnitude (mag)
+      const renderer = {
+        type: "simple",
+        symbol: { type: "simple-marker", outline: { color: [255, 255, 255, 0.5], width: 0.5 } },
+        visualVariables: [
+          { type: "size", field: "mag", stops: [
+            { value: 1, size: 4 }, { value: 3, size: 10 }, { value: 5, size: 20 }, { value: 7, size: 38 }
+          ]},
+          { type: "color", field: "mag", stops: [
+            { value: 1, color: "#ffe08a" }, { value: 3, color: "#ff9f40" },
+            { value: 5, color: "#ff5a2c" }, { value: 7, color: "#c81d11" }
+          ]}
+        ]
+      };
+
+      // 3) Popup shown when a quake point is clicked
+      const popupTemplate = {
+        title: "{place}",
+        content:
+          "<b>Magnitude:</b> M {mag} ({magType})<br>" +
+          "<b>Type:</b> {type}<br>" +
+          "<a href='{url}' target='_blank'>View full details on USGS →</a>"
+      };
+
+      // 4) USGS feed as a layer, auto-refreshing every 5 minutes
+      const quakeLayer = new GeoJSONLayer({
+        url: usgsUrl, renderer: renderer, popupTemplate: popupTemplate,
+        refreshInterval: 5, title: "Live earthquakes"
+      });
+
+      // 5) Map with a free OpenStreetMap basemap
+      const map = new Map({ basemap: "osm", layers: [quakeLayer] });
+
+      // 6) 3D globe
+      const view = new SceneView({
+        container: "viewDiv", map: map,
+        camera: { position: { longitude: -40, latitude: 25, z: 25000000 }, tilt: 0 }
+      });
+
+      // =================================================================
+      // NEWS COLUMN
+      // =================================================================
+
+      // Curated fallback (used when no GNews token is set). These are real
+      // articles with epicenter coordinates, so the 📍 button can fly there.
+      const curatedNews = [
+        { source: "NBC",  date: "Jun 26, 2026",
+          title: "At least 235 dead, 4,300+ injured in Venezuela twin quakes",
+          summary: "Venezuela's health minister reported the rising toll as a state of emergency was declared; rescue efforts continue around Caracas.",
+          url: "https://www.nbcnews.com/world/venezuela/live-blog/live-updates-venezuela-earthquakes-rescue-aid-trump-delcy-caracas-rcna351701",
+          lat: 10.5, lon: -68.2 },
+        { source: "CBC",  date: "Jun 25, 2026",
+          title: "USGS warns Venezuela death toll could reach the thousands",
+          summary: "Aftershocks kept rattling Caracas overnight. The coastal state of La Guaira was hit hardest, with models suggesting fatalities could exceed 10,000.",
+          url: "https://www.cbc.ca/news/world/earthquake-venezuela-caracas-9.7248076",
+          lat: 10.5, lon: -68.2 },
+        { source: "CNBC", date: "Jun 25, 2026",
+          title: "M7.2 and M7.5 struck 39 seconds apart near Caracas",
+          summary: "Two quakes hit roughly 100 miles west of the capital less than a minute apart. Hospitals doubled night shifts to treat the injured.",
+          url: "https://www.cnbc.com/amp/2026/06/25/buildings-collapse-as-quakes-rock-venezuela-high-casualties-likely.html",
+          lat: 10.5, lon: -68.2 },
+        { source: "ABC",  date: "Jun 25, 2026",
+          title: "American tourist recounts escaping the Caracas quakes",
+          summary: "A visitor on a mountaintop, about to board a cable car, described the ground shaking violently beneath him as the first quake struck.",
+          url: "https://abcnews.com/International/strong-71-magnitude-earthquake-recorded-coast-venezuela/story?id=134185994",
+          lat: 10.5, lon: -68.2 }
+      ];
+
+      const list = document.getElementById("news-list");
+      const statusEl = document.getElementById("news-status");
+
+      // Draw one card per news item. Items may or may not have lat/lon:
+      // only items WITH coordinates get the 📍 fly-to button.
+      function renderNews(items) {
+        list.innerHTML = "";
+        items.forEach(function (item) {
+          const hasCoords = (item.lat != null && item.lon != null);
+          const card = document.createElement("div");
+          card.className = "news-card";
+          card.innerHTML =
+            '<div class="news-meta">' +
+              '<span class="news-source">' + item.source + '</span>' +
+              '<span class="news-date">' + item.date + '</span>' +
+            '</div>' +
+            '<div class="news-title">' + item.title + '</div>' +
+            '<div class="news-summary">' + (item.summary || "") + '</div>' +
+            '<div class="news-actions">' +
+              '<span class="news-read">Read full story →</span>' +
+              (hasCoords ? '<span class="news-pin">📍 View on globe</span>' : '') +
+            '</div>';
+
+          // Click the card to open the article
+          card.addEventListener("click", function () {
+            window.open(item.url, "_blank");
+          });
+
+          // Click 📍 to fly the globe to the epicenter (only if we have coords)
+          if (hasCoords) {
+            card.querySelector(".news-pin").addEventListener("click", function (e) {
+              e.stopPropagation();              // don't also open the article
+              spinning = false;                 // stop the auto-rotation
+              spinBtn.textContent = "▶ Resume rotation";
+              view.goTo(
+                { position: { longitude: item.lon, latitude: item.lat, z: 2500000 }, tilt: 45 },
+                { duration: 2000 }
+              ).catch(function () {});
+            });
+          }
+
+          list.appendChild(card);
+        });
+      }
+
+      // Decide: live mode (token set) or curated mode (token empty)?
+      if (GNEWS_TOKEN) {
+        statusEl.textContent = "Fetching live news…";
+        const realUrl = "https://gnews.io/api/v4/search?q=" + encodeURIComponent(NEWS_QUERY) +
+                "&lang=en&max=10&sortby=publishedAt&token=" + GNEWS_TOKEN;
+        const apiUrl = "https://api.allorigins.win/raw?url=" + encodeURIComponent(realUrl);
+        fetch(apiUrl)
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (!data.articles || data.articles.length === 0) {
+              throw new Error("No articles returned");
+            }
+            // Map GNews fields to our card format (no coordinates available)
+            const items = data.articles.map(function (a) {
+              return {
+                source: a.source && a.source.name ? a.source.name : "News",
+                date: new Date(a.publishedAt).toLocaleDateString(),
+                title: a.title,
+                summary: a.description,
+                url: a.url
+                // GNews doesn't include lat/lon, so no 📍 button on live items
+              };
+            });
+            statusEl.textContent = "🟢 Live · updated " + new Date().toLocaleTimeString();
+            renderNews(items);
+          })
+          .catch(function (err) {
+            // If the live fetch fails, fall back to the curated list
+            statusEl.textContent = "⚠ Live fetch failed — showing curated news";
+            renderNews(curatedNews);
+          });
+      } else {
+        statusEl.textContent = "Curated news · add a GNews token for live updates";
+        renderNews(curatedNews);
+      }
+
+      // =================================================================
+      // GLOBE STATS + ROTATION
+      // =================================================================
+
+      function updateStats() {
+        quakeLayer.queryFeatureCount().then(function (n) {
+          document.getElementById("count").textContent = n.toLocaleString();
+          document.getElementById("updated").textContent =
+            "Updated at " + new Date().toLocaleTimeString();
+        });
+      }
+
+      view.when(function () {
+        updateStats();
+        quakeLayer.on("refresh", updateStats);
+      });
+
+      function spin() {
+        if (!spinning) return;
+        const cam = view.camera.clone();
+        cam.position.longitude += 0.15;
+        view.goTo(cam, { animate: false }).catch(function () {});
+      }
+      setInterval(spin, 50);
+
+      spinBtn.addEventListener("click", function () {
+        spinning = !spinning;
+        spinBtn.textContent = spinning ? "⏸ Pause rotation" : "▶ Resume rotation";
+      });
+
+      view.on("drag", function () {
+        if (spinning) {
+          spinning = false;
+          spinBtn.textContent = "▶ Resume rotation";
+        }
+      });
+    });
+  </script>
+</body>
+</html>
